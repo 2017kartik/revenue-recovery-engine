@@ -6,47 +6,69 @@ import { v4 as uuidv4 } from 'uuid';
 cron.schedule('*/1 * * * *', async () => {
   console.log('Running background job to process failed transactions...');
   try {
-    // Fetch up to 5 pending transactions
-    const { rows: transactions } = await pool.query(
-      `SELECT * FROM failed_transactions WHERE recovery_status = 'pending' LIMIT 5`
-    );
+    // TRANSACTION 1: The Atomic Claim (Fast)
+    const claimClient = await pool.connect();
+    let transactions = [];
+    
+    try {
+      await claimClient.query('BEGIN');
+      
+      const result = await claimClient.query(
+        `SELECT * FROM failed_transactions WHERE recovery_status = 'pending' LIMIT 5 FOR UPDATE SKIP LOCKED`
+      );
+      transactions = result.rows;
 
-    if (transactions.length === 0) {
+      if (transactions.length > 0) {
+        const txIds = transactions.map(tx => tx.id);
+        await claimClient.query(
+          `UPDATE failed_transactions SET recovery_status = 'processing' WHERE id = ANY($1)`,
+          [txIds]
+        );
+      }
+      await claimClient.query('COMMIT');
+    } catch (error) {
+      await claimClient.query('ROLLBACK');
+      console.error('Error claiming transactions:', error);
       return;
+    } finally {
+      // The database is now completely free!
+      claimClient.release(); 
     }
 
+    if (transactions.length === 0) return;
+
+    // THE NETWORK CALL: Database-Free Zone
     for (const tx of transactions) {
-      const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-
-        const smsResponse = await generateRecoverySMS(tx.customer_name, tx.amount, tx.failure_reason);
-
-        // Reconstructing the prompt for audit purposes as it matches aiService logic
-        const prompt = `Act as a helpful support agent. Write a polite, concise, single-sentence SMS to a customer named ${tx.customer_name} about their failed payment of $${tx.amount} due to '${tx.failure_reason}'.`;
-
-        const auditId = uuidv4();
-        await client.query(
-          `INSERT INTO audit_logs (id, transaction_id, llm_prompt, llm_response)
-           VALUES ($1, $2, $3, $4)`,
-          [auditId, tx.id, prompt, smsResponse]
-        );
-
-        await client.query(
-          `UPDATE failed_transactions SET recovery_status = 'processed' WHERE id = $1`,
-          [tx.id]
-        );
-
-        await client.query('COMMIT');
-        console.log(`Successfully processed and recovered transaction ${tx.id}`);
-      } catch (error) {
-        await client.query('ROLLBACK');
-        console.error(`Failed to process transaction ${tx.id}. Rolled back. Error:`, error);
-      } finally {
-        client.release();
+        const { prompt, smsResponse } = await generateRecoverySMS(tx.customer_name, tx.amount, tx.failure_reason);
+        // TRANSACTION 2: Audit & Complete (Fast)
+        const saveClient = await pool.connect();
+        try {
+          await saveClient.query('BEGIN');
+          const auditId = uuidv4();
+          await saveClient.query(
+            `INSERT INTO audit_logs (id, transaction_id, llm_prompt, llm_response) VALUES ($1, $2, $3, $4)`,
+            [auditId, tx.id, prompt, smsResponse]
+          );
+          
+          await saveClient.query(
+            `UPDATE failed_transactions SET recovery_status = 'processed' WHERE id = $1`,
+            [tx.id]
+          );
+          
+          await saveClient.query('COMMIT');
+          console.log(`Successfully recovered transaction ${tx.id}`);
+        } catch (error) {
+          await saveClient.query('ROLLBACK');
+          console.error(`Failed to save audit for transaction ${tx.id}`, error);
+        } finally {
+          saveClient.release();
+        }
+      } catch (networkError) {
+         console.error(`AI Network failure for tx ${tx.id}:`, networkError);
       }
     }
   } catch (error) {
-    console.error('Error fetching transactions in worker:', error);
+    console.error('Critical worker error:', error);
   }
 });
