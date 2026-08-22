@@ -19,9 +19,9 @@ An enterprise-grade, event-driven backend system built to automatically recover 
 ### Step-by-Step Execution
 
 1. **Ingestion:** An Express webhook validates and safely writes incoming failed payment payloads into a PostgreSQL database with a strict `pending` state, instantly returning a `200 OK` to prevent timeouts.
-2. **Scheduling:** An asynchronous Node.js cron worker polls the database every minute to process a fixed batch of pending transactions.
-3. **Resilient AI Generation:** An isolated service layer fetches tailored SMS copy from the Gemini Flash LLM, utilizing a strict `try/catch` fallback block to handle network failures without crashing the server.
-4. **Atomic State Updates:** Using SQL transactions (`BEGIN` and `COMMIT`), the worker simultaneously logs the LLM prompts to an audit table and updates the transaction state to `processed`, executing a `ROLLBACK` on any database constraint failure.
+2. **Atomic Claiming (Concurrency Control):** An asynchronous Node.js cron worker polls the database every minute. It utilizes PostgreSQL row-level locking (`SELECT ... FOR UPDATE SKIP LOCKED`) to atomically claim a batch of pending transactions. This acts as a database-level mutex, guaranteeing no transaction is ever processed by two workers simultaneously.
+3. **Resilient AI Generation:** With the database lock safely released to prevent connection pool starvation, the isolated service layer fetches tailored SMS copy from the Gemini Flash LLM. It utilizes a strict `try/catch` fallback block to handle network failures without crashing the server.
+4. **Audit & Completion:** A second, isolated SQL transaction (`BEGIN` and `COMMIT`) is opened to simultaneously insert the AI prompt/response into a Foreign Key-linked audit table and update the core transaction state to `processed`, satisfying strict ACID compliance.
 
 ### Handling Third-Party Failures (Graceful Degradation)
 
@@ -62,9 +62,9 @@ An enterprise-grade, event-driven backend system built to automatically recover 
    Execute the `init.sql` script in your PostgreSQL instance to create the necessary `failed_transactions` and `audit_logs` tables.
 
 4. Start the Application:
-   Run the development server using `ts-node`:
+   Run the development server using `tsx`:
    ```bash
-   npx ts-node src/server.ts
+   npx tsx src/server.ts
    ```
 
 ## 🗄️ Database Schema Summary
