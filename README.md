@@ -1,73 +1,54 @@
-# AI Revenue Recovery Engine
+# AI Revenue Recovery Engine 🚀
 
-An enterprise-grade, event-driven backend system built to automatically recover failed payment transactions using LLM-generated personalized SMS copy, complete with ACID compliance and fault-tolerant architecture.
+An enterprise-grade, event-driven backend system and real-time dashboard built to automatically recover failed payment transactions. It utilizes a distributed message broker and a multi-model AI routing strategy to generate personalized SMS copy, complete with strict ACID compliance and zero-downtime fault tolerance.
 
-## 🚀 Overview
+## 💡 The Business Case
 
-**Elevator Pitch:** I architected an idempotent background engine to automatically recover failed payment transactions. By decoupling the webhook ingestion from the AI generation layer using PostgreSQL and a cron scheduler, the system guarantees zero data loss and handles third-party API rate limits via graceful degradation.
+When a payment fails (e.g., incorrect OTP, bank timeout), standard industry practice is to wait 24 hours and send a generic email. By that time, the user has closed the tab, and the sale is lost. **This system acts as an automated, instant sales agent.** It catches failure webhooks in milliseconds and dispatches a personalized AI-generated SMS to rescue the revenue before the user puts their phone down.
 
 ## 🛠 Tech Stack
 
-- **Runtime:** Node.js, TypeScript
-- **Framework:** Express.js
-- **Database:** PostgreSQL (Neon Serverless Postgres)
-- **AI Integration:** Google Gemini AI SDK (`gemini-flash-latest`)
-- **Task Scheduling:** Node-Cron
+*   **Frontend:** Next.js, React, Tailwind CSS (Polling-based optimistic UI)
+*   **Backend Runtime:** Node.js, TypeScript, Express.js
+*   **Database:** PostgreSQL (Neon Serverless)
+*   **Message Broker:** BullMQ, Redis (Upstash)
+*   **Primary AI:** Groq LPU (`llama-3.3-70b-versatile` via OpenAI SDK)
+*   **Secondary AI:** Google Gemini (`gemini-3.6-flash`)
 
 ## 🏗 System Architecture
 
-### Step-by-Step Execution
+### 1. Instant Ingestion (Decoupling)
+An Express webhook validates incoming failed payment payloads, safely writes them to PostgreSQL with a `pending` state, instantly pushes a job payload to a Redis queue, and returns a `200 OK`. This guarantees the webhook never times out waiting for AI inference.
 
-1. **Ingestion:** An Express webhook validates and safely writes incoming failed payment payloads into a PostgreSQL database with a strict `pending` state, instantly returning a `200 OK` to prevent timeouts.
-2. **Atomic Claiming (Concurrency Control):** An asynchronous Node.js cron worker polls the database every minute. It utilizes PostgreSQL row-level locking (`SELECT ... FOR UPDATE SKIP LOCKED`) to atomically claim a batch of pending transactions. This acts as a database-level mutex, guaranteeing no transaction is ever processed by two workers simultaneously.
-3. **Resilient AI Generation:** With the database lock safely released to prevent connection pool starvation, the isolated service layer fetches tailored SMS copy from the Gemini Flash LLM. It utilizes a strict `try/catch` fallback block to handle network failures without crashing the server.
-4. **Audit & Completion:** A second, isolated SQL transaction (`BEGIN` and `COMMIT`) is opened to simultaneously insert the AI prompt/response into a Foreign Key-linked audit table and update the core transaction state to `processed`, satisfying strict ACID compliance.
+### 2. Asynchronous Consumption (BullMQ)
+An isolated BullMQ worker pulls jobs one at a time from Redis. This prevents API rate-limit threshold breaches while maintaining steady throughput, keeping the main Node.js event loop completely unblocked for incoming traffic.
 
-### Handling Third-Party Failures (Graceful Degradation)
+### 3. Multi-Model LLM Routing (Graceful Degradation)
+To guarantee sub-second SMS generation and zero downtime, the system employs a Primary/Secondary LLM strategy:
+*   **Primary:** Routes to Groq's LPUs for hyper-fast inference.
+*   **Failover:** If Groq experiences a rate limit (`429`) or server outage (`503`), a strict `try/catch` block intercepts the crash and seamlessly routes the identical prompt to the Gemini API fallback. 
+*   **Backoff:** If both providers fail, BullMQ automatically re-queues the job using an exponential backoff algorithm (2s → 4s → 8s).
 
-**The Edge Case Scenario:** During testing, the Google Gemini API experienced high global demand and returned a `503 UNAVAILABLE` error.
-
-**The Engineering Solution:** If an external API crashes in a tightly coupled system, the unhandled exception crashes the entire Node.js server, taking the webhook offline and permanently dropping incoming payment data. Because I strictly decoupled the architecture and wrapped the AI Service in a `try/catch` block, the system demonstrated **Graceful Degradation**. It caught the `503` error, swallowed the crash, immediately returned a hardcoded fallback SMS, and updated the database normally, keeping the server alive and the data pipeline secure.
+### 4. Atomic Audit & Completion
+Upon successful generation, the worker opens a PostgreSQL micro-transaction to simultaneously insert the AI prompt/response into a Foreign Key-linked `audit_logs` table and update the core transaction state to `processed`, fulfilling strict ACID compliance.
 
 ## 📊 Complexity Analysis
 
-- **Time Complexity:**
-  - `O(1)` for webhook ingestion, allowing massive scale without bottlenecking.
-  - `O(B)` per cron cycle for the background worker, where `B` is the strict batch size, ensuring stable processing time regardless of total database volume.
-- **Space Complexity:** `O(1)` since memory utilization remains bounded by the fixed payload and AI response strings without scaling up.
+*   **Time Complexity:** 
+    *   `O(1)` for webhook ingestion and queue pushing.
+    *   Asynchronous processing throughput is strictly bound by `O(I)` where `I` is the inference latency of the active AI model.
+*   **Space Complexity:** `O(N)` for Redis memory allocation, where `N` represents the queue depth of pending recovery jobs.
 
 ## 💻 Getting Started
 
 ### Prerequisites
-
-- Node.js (v18+)
-- PostgreSQL (or Neon DB instance)
-- Google Gemini API Key
+*   Node.js (v18+)
+*   PostgreSQL (e.g., Neon DB)
+*   Redis (e.g., Upstash)
+*   Groq API Key & Google Gemini API Key
 
 ### Installation
 
-1. Clone the repository and install dependencies:
+1. **Clone & Install:**
    ```bash
    npm install
-   ```
-
-2. Configure Environment Variables (`.env`):
-   ```env
-   PORT=3000
-   DATABASE_URL=postgresql://<user>:<password>@<host>/<dbname>
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
-
-3. Initialize the Database:
-   Execute the `init.sql` script in your PostgreSQL instance to create the necessary `failed_transactions` and `audit_logs` tables.
-
-4. Start the Application:
-   Run the development server using `tsx`:
-   ```bash
-   npx tsx src/server.ts
-   ```
-
-## 🗄️ Database Schema Summary
-
-- `failed_transactions`: Stores webhook data (`customer_name`, `amount`, `failure_reason`) and tracks `recovery_status`.
-- `audit_logs`: A compliance table linked via foreign key to track the exact `llm_prompt` sent to the model and the exact `llm_response` received.

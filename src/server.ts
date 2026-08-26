@@ -14,7 +14,7 @@ app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader(
     'Access-Control-Allow-Origin',
-    process.env.FRONTEND_ORIGIN || 'http://localhost:3001'
+    process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
   );
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
