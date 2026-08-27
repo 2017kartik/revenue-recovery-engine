@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import pool from './db';
 import { generateRecoverySMS } from './aiService';
+import { sendRecoverySMS } from './smsService';
 
 // ─── Redis Connection ─────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export const recoveryQueue = new Queue(QUEUE_NAME, {
 export interface RecoveryJobData {
   txId:           string;
   customerName:   string;
+  customerPhone:  string | null;  // E.164 format e.g. '+919876543210'; null = no delivery
   amount:         number;
   failureReason:  string;
 }
@@ -65,7 +67,7 @@ export interface RecoveryJobData {
 export const recoveryWorker = new Worker<RecoveryJobData>(
   QUEUE_NAME,
   async (job: Job<RecoveryJobData>) => {
-    const { txId, customerName, amount, failureReason } = job.data;
+    const { txId, customerName, customerPhone, amount, failureReason } = job.data;
 
     console.log(`[Job ${job.id}] Processing tx ${txId} — attempt ${job.attemptsMade + 1}`);
 
@@ -95,11 +97,15 @@ export const recoveryWorker = new Worker<RecoveryJobData>(
         [auditId, txId, prompt, `[${model}] ${smsResponse}`]
       );
 
+      // Also persist the generated SMS on the transaction row itself so the
+      // dashboard can display the exact message sent to the customer.
       await client.query(
         `UPDATE failed_transactions
-         SET recovery_status = 'processed', retry_after = NULL
+         SET recovery_status = 'processed',
+             sms_body        = $2,
+             retry_after     = NULL
          WHERE id = $1`,
-        [txId]
+        [txId, smsResponse]
       );
 
       await client.query('COMMIT');
@@ -110,6 +116,11 @@ export const recoveryWorker = new Worker<RecoveryJobData>(
       throw dbError; // re-throw so BullMQ retries the whole job
     } finally {
       client.release();
+    }
+
+    // ── Step 4: Deliver SMS (non-fatal — failure does NOT retry the job) ──────
+    if (customerPhone) {
+      await sendRecoverySMS(customerPhone, smsResponse);
     }
   },
   {
@@ -125,16 +136,22 @@ recoveryWorker.on('completed', (job) =>
 );
 
 recoveryWorker.on('failed', (job, err) => {
-  // On final failure (all attempts exhausted), revert the row to pending
-  // so it can be re-queued on the next manual trigger
+  // ── STOPPING RULE ────────────────────────────────────────────────────────────────
+  // Once BullMQ exhausts all 3 attempts, the row is permanently retired.
+  // Setting status = 'failed_permanently' ensures neither the cron drain
+  // nor the manual trigger will ever re-pick this transaction, preventing
+  // infinite retry loops and accidental customer re-contact.
   if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     pool.query(
       `UPDATE failed_transactions
-       SET recovery_status = 'pending'
+       SET recovery_status = 'failed_permanently',
+           retry_count     = retry_count + 1
        WHERE id = $1 AND recovery_status = 'processing'`,
       [job.data.txId]
+    ).then(() =>
+      console.warn(`⚠ [Worker] tx ${job.data.txId} permanently failed after ${job.attemptsMade} attempt(s) — stopping`)
     ).catch((dbErr) =>
-      console.error(`CRITICAL: Could not revert tx ${job.data.txId} to pending:`, dbErr)
+      console.error(`CRITICAL: Could not retire tx ${job.data.txId}:`, dbErr)
     );
   }
   console.error(`✗ [Worker] Job ${job?.id} failed (attempt ${job?.attemptsMade}):`, err.message);
