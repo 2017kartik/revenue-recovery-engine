@@ -6,6 +6,8 @@ import type { Metrics, Transaction, RecoveryRunResult } from '@/types/recovery';
 
 const POLL_INTERVAL_MS = 8_000;
 const POLL_INTERVAL_SEC = POLL_INTERVAL_MS / 1_000;
+/** Faster poll rate when jobs are actively processing — catches live transitions */
+const FAST_POLL_MS = 2_000;
 
 export interface UseRecoveryDashboardReturn {
   metrics: Metrics;
@@ -69,6 +71,14 @@ export function useRecoveryDashboard(): UseRecoveryDashboardReturn {
       clearInterval(tickId);
     };
   }, [fetchAll]);
+
+  // ⚡ Fast-poll overlay: when jobs are actively processing, poll every 2 s
+  // so the Failed → In Progress → Recovered transition is visible in real-time.
+  useEffect(() => {
+    if (metrics.inProgressCount === 0) return;
+    const fastId = setInterval(fetchAll, FAST_POLL_MS);
+    return () => clearInterval(fastId);
+  }, [metrics.inProgressCount, fetchAll]);
 
   const runRecovery = useCallback(async () => {
     if (isLoading) return;
