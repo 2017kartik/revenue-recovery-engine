@@ -55,10 +55,10 @@ interface FilterBarProps {
 }
 
 const FILTER_TABS: { value: StatusFilter; label: string }[] = [
-  { value: 'all',        label: 'All' },
-  { value: 'pending',    label: 'Failed' },
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Failed' },
   { value: 'processing', label: 'In Progress' },
-  { value: 'processed',  label: 'Recovered' },
+  { value: 'processed', label: 'Recovered' },
 ];
 
 function FilterBar({ active, counts, onChange }: FilterBarProps) {
@@ -122,10 +122,10 @@ interface MetricCardProps {
 }
 
 const ACCENT_CLASSES: Record<MetricCardProps['accent'], { bar: string; value: string }> = {
-  red:     { bar: 'bg-red-500',     value: 'text-red-600' },
-  amber:   { bar: 'bg-amber-400',   value: 'text-amber-600' },
+  red: { bar: 'bg-red-500', value: 'text-red-600' },
+  amber: { bar: 'bg-amber-400', value: 'text-amber-600' },
   emerald: { bar: 'bg-emerald-500', value: 'text-emerald-600' },
-  violet:  { bar: 'bg-violet-500',  value: 'text-violet-600' },
+  violet: { bar: 'bg-violet-500', value: 'text-violet-600' },
 };
 
 function MetricCard({ label, value, accent, sublabel }: MetricCardProps) {
@@ -180,9 +180,8 @@ function TransactionRow({ tx, index }: { tx: Transaction; index: number }) {
   return (
     <tr
       id={`tx-row-${tx.transactionId}`}
-      className={`border-b border-gray-200 transition-colors duration-150 hover:bg-gray-50 ${
-        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
-      }`}
+      className={`border-b border-gray-200 transition-colors duration-150 hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
+        }`}
     >
       <td className="px-4 py-3.5 font-mono text-xs text-gray-500 whitespace-nowrap">
         {tx.transactionId.slice(0, 8).toUpperCase()}
@@ -247,10 +246,10 @@ export default function RevenueRecoveryDashboard({
   }, [transactions, activeFilter]);
 
   const filterCounts = useMemo<Record<StatusFilter, number>>(() => ({
-    all:        transactions.length,
-    pending:    transactions.filter((tx) => tx.status === 'pending').length,
+    all: transactions.length,
+    pending: transactions.filter((tx) => tx.status === 'pending').length,
     processing: transactions.filter((tx) => tx.status === 'processing').length,
-    processed:  transactions.filter((tx) => tx.status === 'processed').length,
+    processed: transactions.filter((tx) => tx.status === 'processed').length,
   }), [transactions]);
 
   const recoveredFormatted = useMemo(
@@ -375,9 +374,8 @@ export default function RevenueRecoveryDashboard({
 
           <div className="ml-auto hidden sm:flex items-center gap-1.5 text-[11px] text-gray-400">
             <span
-              className={`w-1.5 h-1.5 rounded-full animate-pulse transition-colors duration-500 ${
-                nextRefreshIn <= 2 ? 'bg-amber-400' : 'bg-emerald-400'
-              }`}
+              className={`w-1.5 h-1.5 rounded-full animate-pulse transition-colors duration-500 ${nextRefreshIn <= 2 ? 'bg-amber-400' : 'bg-emerald-400'
+                }`}
               aria-hidden="true"
             />
             <span className="tabular-nums">

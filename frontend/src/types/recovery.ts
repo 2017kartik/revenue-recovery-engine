@@ -2,20 +2,23 @@
 // These mirror the exact column names returned by GET /api/transactions
 // and GET /api/metrics from the Express backend.
 
-export type RecoveryStatus = 'pending' | 'processing' | 'processed';
+export type RecoveryStatus = 'pending' | 'processing' | 'processed' | 'failed_permanently';
 
 export interface Transaction {
   transactionId: string;
   customer: string;
   amount: number;
   status: RecoveryStatus;
+  smsBody:    string | null;  // AI-generated recovery message (null until processed)
+  retryCount: number;         // total BullMQ attempts exhausted
   createdAt: string; // ISO 8601
 }
 
 export interface Metrics {
-  failedCount: number;        // pending rows
-  inProgressCount: number;    // processing rows (BullMQ active jobs)
-  recoveredAmount: number;    // sum(amount) for processed rows
+  failedCount: number;              // pending rows
+  inProgressCount: number;          // processing rows (BullMQ active jobs)
+  recoveredAmount: number;          // sum(amount) for processed rows
+  failedPermanentlyCount: number;   // rows that exhausted all retries
 }
 
 export interface RecoveryRunResult {
