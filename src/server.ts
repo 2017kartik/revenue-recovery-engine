@@ -63,7 +63,7 @@ app.get('/api/metrics', async (_req, res) => {
 app.get('/api/transactions', async (_req, res) => {
   try {
     const result = await pool.query(`
-      SELECT
+      (SELECT
         id              AS "transactionId",
         customer_name   AS "customer",
         amount,
@@ -71,9 +71,28 @@ app.get('/api/transactions', async (_req, res) => {
         sms_body        AS "smsBody",
         retry_count     AS "retryCount",
         created_at      AS "createdAt"
-      FROM failed_transactions
-      ORDER BY created_at DESC
-      LIMIT 100
+      FROM failed_transactions WHERE recovery_status = 'processing' ORDER BY created_at DESC LIMIT 20)
+      UNION ALL
+      (SELECT
+        id              AS "transactionId",
+        customer_name   AS "customer",
+        amount,
+        recovery_status AS "status",
+        sms_body        AS "smsBody",
+        retry_count     AS "retryCount",
+        created_at      AS "createdAt"
+      FROM failed_transactions WHERE recovery_status = 'processed' ORDER BY created_at DESC LIMIT 20)
+      UNION ALL
+      (SELECT
+        id              AS "transactionId",
+        customer_name   AS "customer",
+        amount,
+        recovery_status AS "status",
+        sms_body        AS "smsBody",
+        retry_count     AS "retryCount",
+        created_at      AS "createdAt"
+      FROM failed_transactions WHERE recovery_status = 'pending' ORDER BY created_at DESC LIMIT 60)
+      ORDER BY "createdAt" DESC
     `);
     res.json(result.rows);
   } catch (error) {
