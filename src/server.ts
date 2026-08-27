@@ -72,14 +72,7 @@ app.get('/api/transactions', async (_req, res) => {
         retry_count     AS "retryCount",
         created_at      AS "createdAt"
       FROM failed_transactions
-      ORDER BY
-        CASE recovery_status
-          WHEN 'processing'          THEN 1
-          WHEN 'processed'           THEN 2
-          WHEN 'failed_permanently'  THEN 3
-          ELSE 4
-        END,
-        created_at DESC
+      ORDER BY created_at DESC
       LIMIT 100
     `);
     res.json(result.rows);
