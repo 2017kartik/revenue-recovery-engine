@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
-import type { Metrics, Transaction, RecoveryRunResult } from '@/types/recovery';
+import type { Metrics, Transaction } from '@/types/recovery';
 
 const POLL_INTERVAL_MS = 8_000;
 const POLL_INTERVAL_SEC = POLL_INTERVAL_MS / 1_000;
@@ -14,7 +14,6 @@ export interface UseRecoveryDashboardReturn {
   transactions: Transaction[];
   isLoading: boolean;
   isFetching: boolean;
-  lastRunResult: RecoveryRunResult | null;
   lastRefreshedAt: string | null;
   /** Seconds until the next automatic poll (counts 8→0, resets each cycle) */
   nextRefreshIn: number;
@@ -34,7 +33,6 @@ export function useRecoveryDashboard(): UseRecoveryDashboardReturn {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
-  const [lastRunResult, setLastRunResult] = useState<RecoveryRunResult | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [nextRefreshIn, setNextRefreshIn] = useState<number>(POLL_INTERVAL_SEC);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +45,7 @@ export function useRecoveryDashboard(): UseRecoveryDashboardReturn {
       setMetrics(m);
       setTransactions(t);
       setLastRefreshedAt(new Date().toISOString());
-      setNextRefreshIn(POLL_INTERVAL_SEC); // reset the countdown
+      // 🐛 Fix: Do NOT reset nextRefreshIn here, otherwise fast-poll hijacks the countdown!
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch data';
       setError(msg);
@@ -56,21 +54,26 @@ export function useRecoveryDashboard(): UseRecoveryDashboardReturn {
     }
   }, []);
 
-  // Initial load + polling + live countdown
+  // 1. Initial load
   useEffect(() => {
     fetchAll();
-    const pollId = setInterval(fetchAll, POLL_INTERVAL_MS);
-
-    // Tick the countdown every second
-    const tickId = setInterval(() => {
-      setNextRefreshIn((s) => (s <= 1 ? POLL_INTERVAL_SEC : s - 1));
-    }, 1_000);
-
-    return () => {
-      clearInterval(pollId);
-      clearInterval(tickId);
-    };
   }, [fetchAll]);
+
+  // 2. Tick the countdown every second independently
+  useEffect(() => {
+    const tickId = setInterval(() => {
+      setNextRefreshIn((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1_000);
+    return () => clearInterval(tickId);
+  }, []);
+
+  // 3. When countdown hits 0, refresh and reset to 8s
+  useEffect(() => {
+    if (nextRefreshIn === 0) {
+      fetchAll();
+      setNextRefreshIn(POLL_INTERVAL_SEC);
+    }
+  }, [nextRefreshIn, fetchAll]);
 
   // ⚡ Fast-poll overlay: when jobs are actively processing, poll every 2 s
   // so the Failed → In Progress → Recovered transition is visible in real-time.
@@ -83,41 +86,22 @@ export function useRecoveryDashboard(): UseRecoveryDashboardReturn {
   const runRecovery = useCallback(async () => {
     if (isLoading) return;
     setIsLoading(true);
-    setLastRunResult(null);
     try {
-      const result = await api.runRecovery();
-      setLastRunResult(result);
-
-      // ── Optimistic update ────────────────────────────────────────────────────
-      // Immediately flip the claimed rows to 'processing' so judges see the
-      // yellow badge the instant the button is clicked — no waiting for the poll.
-      if (result.transactionIds.length > 0) {
-        const claimedSet = new Set(result.transactionIds);
-        setTransactions((prev) =>
-          prev.map((tx) =>
-            claimedSet.has(tx.transactionId) && tx.status === 'pending'
-              ? { ...tx, status: 'processing' as const }
-              : tx
-          )
-        );
-      }
-
-      // Confirmed server state will overwrite on next poll; kick it off immediately
-      await fetchAll();
+      await api.runRecovery();
+      // We rely completely on the 8-second auto-polling loop to update the UI grid.
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Recovery failed';
       setError(msg);
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, fetchAll]);
+  }, [isLoading]);
 
   return {
     metrics,
     transactions,
     isLoading,
     isFetching,
-    lastRunResult,
     lastRefreshedAt,
     nextRefreshIn,
     error,

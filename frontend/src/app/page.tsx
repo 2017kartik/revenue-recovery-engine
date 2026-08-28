@@ -8,7 +8,6 @@ export default function DashboardPage() {
     metrics,
     transactions,
     isLoading,
-    lastRunResult,
     lastRefreshedAt,
     nextRefreshIn,
     error,
@@ -32,7 +31,6 @@ export default function DashboardPage() {
         metrics={metrics}
         isLoading={isLoading}
         onRunRecovery={runRecovery}
-        lastRunResult={lastRunResult}
         lastRefreshedAt={lastRefreshedAt}
         nextRefreshIn={nextRefreshIn}
       />

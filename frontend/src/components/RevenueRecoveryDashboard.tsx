@@ -4,239 +4,24 @@ import React, { useMemo, useState } from 'react';
 import type {
   RevenueRecoveryDashboardProps,
   Transaction,
-  RecoveryStatus,
   StatusFilter,
 } from '@/types/recovery';
-
-// ─── Status Config ────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<
-  RecoveryStatus,
-  { label: string; bg: string; text: string; dot: string }
-> = {
-  pending: {
-    label: 'Failed',
-    bg: 'bg-red-50',
-    text: 'text-red-700',
-    dot: 'bg-red-500',
-  },
-  processing: {
-    label: 'Processing',
-    bg: 'bg-amber-50',
-    text: 'text-amber-700',
-    dot: 'bg-amber-400',
-  },
-  processed: {
-    label: 'Recovered',
-    bg: 'bg-emerald-50',
-    text: 'text-emerald-700',
-    dot: 'bg-emerald-500',
-  },
-};
-
-function StatusBadge({ status }: { status: RecoveryStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold tracking-wide uppercase ${cfg.bg} ${cfg.text} border border-current border-opacity-20`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
-}
-
-// ─── Filter Bar ───────────────────────────────────────────────────────────────
-
-interface FilterBarProps {
-  active: StatusFilter;
-  counts: Record<StatusFilter, number>;
-  onChange: (f: StatusFilter) => void;
-}
-
-const FILTER_TABS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Failed' },
-  { value: 'processing', label: 'In Progress' },
-  { value: 'processed', label: 'Recovered' },
-];
-
-function FilterBar({ active, counts, onChange }: FilterBarProps) {
-  return (
-    <div
-      id="status-filter-bar"
-      role="tablist"
-      aria-label="Filter transactions by status"
-      className="flex items-stretch border-b border-gray-200"
-    >
-      {FILTER_TABS.map((tab) => {
-        const isActive = tab.value === active;
-        return (
-          <button
-            key={tab.value}
-            id={`filter-tab-${tab.value}`}
-            role="tab"
-            aria-selected={isActive}
-            type="button"
-            onClick={() => onChange(tab.value)}
-            className={`
-              relative px-4 py-2.5 text-xs font-semibold tracking-wide uppercase
-              flex items-center gap-2
-              transition-colors duration-100 focus-visible:outline-none
-              focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-900
-              ${isActive
-                ? 'text-gray-900 bg-white'
-                : 'text-gray-400 bg-gray-50 hover:text-gray-600 hover:bg-white'
-              }
-            `}
-          >
-            {isActive && (
-              <span
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900"
-                aria-hidden="true"
-              />
-            )}
-            {tab.label}
-            <span
-              className={`
-                tabular-nums px-1.5 py-0.5 rounded text-[10px] font-bold
-                ${isActive ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-500'}
-              `}
-            >
-              {counts[tab.value]}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Metric Card ──────────────────────────────────────────────────────────────
-
-interface MetricCardProps {
-  label: string;
-  value: string | number;
-  accent: 'red' | 'amber' | 'emerald' | 'violet';
-  sublabel?: string;
-}
-
-const ACCENT_CLASSES: Record<MetricCardProps['accent'], { bar: string; value: string }> = {
-  red: { bar: 'bg-red-500', value: 'text-red-600' },
-  amber: { bar: 'bg-amber-400', value: 'text-amber-600' },
-  emerald: { bar: 'bg-emerald-500', value: 'text-emerald-600' },
-  violet: { bar: 'bg-violet-500', value: 'text-violet-600' },
-};
-
-function MetricCard({ label, value, accent, sublabel }: MetricCardProps) {
-  const cls = ACCENT_CLASSES[accent];
-  return (
-    <div className="border border-gray-200 bg-white flex flex-col overflow-hidden">
-      <div className={`h-0.5 w-full ${cls.bar}`} />
-      <div className="px-5 py-4 flex flex-col gap-1">
-        <span className="text-[11px] font-semibold tracking-widest uppercase text-gray-400">
-          {label}
-        </span>
-        <span className={`text-3xl font-bold tabular-nums ${cls.value}`}>{value}</span>
-        {sublabel && (
-          <span className="text-[11px] text-gray-400">{sublabel}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Spinner ──────────────────────────────────────────────────────────────────
-
-function Spinner({ size = 'sm' }: { size?: 'sm' | 'md' }) {
-  const cls = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
-  return (
-    <svg
-      className={`animate-spin ${cls} text-current`}
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
-  );
-}
-
-// ─── Table Row ────────────────────────────────────────────────────────────────
-
-function TransactionRow({ tx, index }: { tx: Transaction; index: number }) {
-  const formattedAmount = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(Number(tx.amount));
-
-  const formattedDate = new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(tx.createdAt));
-
-  return (
-    <tr
-      id={`tx-row-${tx.transactionId}`}
-      className={`border-b border-gray-200 transition-colors duration-150 hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
-        }`}
-    >
-      <td className="px-4 py-3.5 font-mono text-xs text-gray-500 whitespace-nowrap">
-        {tx.transactionId.slice(0, 8).toUpperCase()}
-        <span className="text-gray-300">…</span>
-      </td>
-      <td className="px-4 py-3.5 font-semibold tabular-nums text-gray-900 text-sm">
-        {formattedAmount}
-      </td>
-      <td className="px-4 py-3.5 text-sm text-gray-700">{tx.customer}</td>
-      <td className="px-4 py-3.5 text-sm text-gray-400 hidden md:table-cell whitespace-nowrap">
-        {formattedDate}
-      </td>
-      <td className="px-4 py-3.5">
-        <StatusBadge status={tx.status} />
-      </td>
-    </tr>
-  );
-}
-
-// ─── Empty State ──────────────────────────────────────────────────────────────
-
-function EmptyState({ filtered }: { filtered: boolean }) {
-  return (
-    <tr>
-      <td colSpan={5} className="py-16 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          <p className="text-sm text-gray-400 font-medium">
-            {filtered ? 'No transactions match this filter' : 'No transactions found'}
-          </p>
-          {!filtered && (
-            <p className="text-xs text-gray-300">
-              POST to <code className="font-mono">/api/webhooks/payment-failed</code> to ingest data
-            </p>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
+import DemoTriggerButton from './DemoTriggerButton';
+import { Spinner } from '@/components/ui/Spinner';
+import { Toast } from '@/components/ui/Toast';
+import { MetricCard } from '@/components/dashboard/MetricCard';
+import { TransactionsTable } from '@/components/dashboard/TransactionsTable';
 
 export default function RevenueRecoveryDashboard({
   transactions,
   metrics,
   isLoading,
   onRunRecovery,
-  lastRunResult,
   lastRefreshedAt,
   nextRefreshIn = 8,
 }: RevenueRecoveryDashboardProps) {
   const [activeFilter, setActiveFilter] = useState<StatusFilter>('all');
+  const [activeToast, setActiveToast] = useState<{ title?: string; message: string } | null>(null);
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
@@ -269,177 +54,135 @@ export default function RevenueRecoveryDashboard({
     );
   }, [lastRefreshedAt]);
 
+  const handleRowClick = (tx: Transaction) => {
+    if (tx.status === 'processed') {
+      setActiveToast({
+        title: `AI Message sent to ${tx.customer}`,
+        message: tx.smsBody || 'No message recorded.',
+      });
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <main
       id="revenue-recovery-dashboard"
-      className="min-h-screen bg-gray-50 font-sans antialiased"
+      className="min-h-screen bg-bg-light font-sans antialiased pb-12"
     >
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* ── Top App Bar (Navy) ──────────────────────────────────────────────── */}
       <header
-        id="dashboard-header"
-        className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between"
+        className="bg-navy text-white px-8 py-5 flex items-center justify-between shadow-md relative z-10"
       >
-        <div className="flex items-center gap-3">
-          <div className="w-1 h-7 bg-gray-900 rounded-sm" aria-hidden="true" />
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-primary/20 rounded-xl flex items-center justify-center text-primary">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
           <div>
-            <h1 className="text-lg font-extrabold tracking-tight text-gray-900 leading-none">
+            <h1 className="text-xl font-bold tracking-wide leading-tight">
               Revenue Recovery Engine
             </h1>
-            <p className="text-[11px] text-gray-400 mt-0.5 font-medium tracking-wide uppercase">
-              AI-Powered Payment Recovery
+            <p className="text-xs text-blue-200/70 font-medium tracking-wide mt-0.5">
+              AI-POWERED PAYMENT RECOVERY
             </p>
           </div>
         </div>
 
         {lastRefreshedFormatted && (
-          <span className="text-[11px] text-gray-400 font-medium hidden sm:block">
-            Last refreshed at {lastRefreshedFormatted}
-          </span>
+          <div className="hidden sm:flex items-center gap-3 bg-white/5 rounded-full px-4 py-2 border border-white/10">
+            <span
+              className={`w-2 h-2 rounded-full animate-pulse transition-colors duration-500 ${nextRefreshIn <= 2 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+              aria-hidden="true"
+            />
+            <span className="text-xs font-medium text-gray-300 tabular-nums">
+              Refreshed at {lastRefreshedFormatted}
+            </span>
+          </div>
         )}
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-8 py-8 space-y-8">
+        
+        {/* ── Action Bar ──────────────────────────────────────────────────── */}
+        <section
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={onRunRecovery}
+              className={`
+                inline-flex items-center gap-2 px-6 py-3 rounded-xl
+                text-sm font-bold tracking-wide text-white
+                bg-navy shadow-sm hover:shadow-md hover:bg-blue-950
+                transition-all duration-200 active:scale-95
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg-light
+                disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100
+              `}
+            >
+              {isLoading ? (
+                <>
+                  <Spinner size="sm" />
+                  <span>Running Recovery…</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Run AI Recovery</span>
+                </>
+              )}
+            </button>
+            
+            <DemoTriggerButton />
+          </div>
+        </section>
 
         {/* ── Metrics Grid ─────────────────────────────────────────────── */}
-        <section
-          id="metrics-grid"
-          aria-label="Key metrics"
-          className="grid grid-cols-3 gap-0 border border-gray-200 divide-x divide-gray-200 overflow-hidden"
-        >
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <MetricCard
             label="Failed Payments"
             value={metrics.failedCount}
-            accent="red"
             sublabel="Pending recovery"
+            icon={<svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
           />
           <MetricCard
             label="In Progress"
             value={metrics.inProgressCount}
-            accent="amber"
             sublabel="AI outreach active"
+            icon={<svg className="w-6 h-6 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
           />
           <MetricCard
             label="Revenue Recovered"
             value={recoveredFormatted}
-            accent="emerald"
             sublabel="Total this period"
+            icon={<svg className="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
           />
         </section>
 
-        {/* ── Action Bar ──────────────────────────────────────────────────── */}
-        <section
-          id="action-bar"
-          aria-label="Recovery actions"
-          className="bg-white border border-gray-200 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4"
-        >
-          <button
-            id="run-recovery-btn"
-            type="button"
-            disabled={isLoading}
-            onClick={onRunRecovery}
-            aria-busy={isLoading}
-            className={`
-              inline-flex items-center gap-2 px-5 py-2.5
-              text-sm font-bold tracking-wide text-white
-              border border-gray-900 bg-gray-900
-              transition-colors duration-150
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2
-              disabled:opacity-50 disabled:cursor-not-allowed
-              hover:enabled:bg-gray-700 hover:enabled:border-gray-700
-            `}
-          >
-            {isLoading ? (
-              <>
-                <Spinner size="sm" />
-                <span>Running Recovery…</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span>Run AI Recovery</span>
-              </>
-            )}
-          </button>
-
-          {lastRunResult && (
-            <p id="run-result-message" className="text-sm text-gray-600" aria-live="polite">
-              <span className="font-semibold text-emerald-600">✓</span>{' '}
-              {lastRunResult.message}
-            </p>
-          )}
-
-          <div className="ml-auto hidden sm:flex items-center gap-1.5 text-[11px] text-gray-400">
-            <span
-              className={`w-1.5 h-1.5 rounded-full animate-pulse transition-colors duration-500 ${nextRefreshIn <= 2 ? 'bg-amber-400' : 'bg-emerald-400'
-                }`}
-              aria-hidden="true"
-            />
-            <span className="tabular-nums">
-              Refreshing in <span className="font-bold text-gray-600">{nextRefreshIn}s</span>
-            </span>
-          </div>
-        </section>
-
         {/* ── Transactions Table ──────────────────────────────────────────── */}
-        <section
-          id="transactions-table-section"
-          aria-label="Transaction list"
-          className="bg-white border border-gray-200 overflow-hidden"
-        >
-          <div className="border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-              Transactions
-            </h2>
-            <span className="text-xs text-gray-400 tabular-nums">
-              {filteredTransactions.length} of {transactions.length} record
-              {transactions.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          <FilterBar active={activeFilter} counts={filterCounts} onChange={setActiveFilter} />
-
-          <div className="overflow-x-auto">
-            <table
-              id="transactions-table"
-              className="w-full text-left border-collapse"
-              aria-label="Failed transactions"
-            >
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  {['Transaction ID', 'Amount', 'Customer'].map((col) => (
-                    <th
-                      key={col}
-                      scope="col"
-                      className="px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-widest whitespace-nowrap"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                  <th scope="col" className="px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-widest hidden md:table-cell whitespace-nowrap">
-                    Date
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-widest">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTransactions.length === 0 ? (
-                  <EmptyState filtered={activeFilter !== 'all'} />
-                ) : (
-                  filteredTransactions.map((tx, i) => (
-                    <TransactionRow key={tx.transactionId} tx={tx} index={i} />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <TransactionsTable
+          transactions={transactions}
+          filteredTransactions={filteredTransactions}
+          activeFilter={activeFilter}
+          filterCounts={filterCounts}
+          onFilterChange={setActiveFilter}
+          onRowClick={handleRowClick}
+        />
       </div>
+
+      {activeToast && (
+        <Toast
+          title={activeToast.title}
+          message={activeToast.message}
+          onClose={() => setActiveToast(null)}
+        />
+      )}
     </main>
   );
 }
