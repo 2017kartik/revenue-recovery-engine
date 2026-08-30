@@ -8,12 +8,15 @@ When a payment fails (e.g., incorrect OTP, bank timeout), standard industry prac
 
 ## 🛠 Tech Stack
 
-*   **Frontend:** Next.js, React, Tailwind CSS (Polling-based optimistic UI)
+*   **Frontend:** Next.js, React, Tailwind CSS (Polling-based optimistic UI, Atomic Design System, Client-side Pagination)
 *   **Backend Runtime:** Node.js, TypeScript, Express.js
 *   **Database:** PostgreSQL (Neon Serverless)
 *   **Message Broker:** BullMQ, Redis (Upstash)
 *   **Primary AI:** Groq LPU (`llama-3.3-70b-versatile` via OpenAI SDK)
 *   **Secondary AI:** Google Gemini (`gemini-3.6-flash`)
+
+## 🎨 UI Architecture & Scalability
+The frontend is built using an **Atomic Design Architecture**, isolating components into strict boundaries (e.g., `Pagination`, `FilterBar`, `StatusBadge`, `Toast`). This guarantees zero cross-component re-render leakage (e.g., a dashboard polling timer will never disrupt a modal animation) and allows the application to cleanly scale as new transaction types and recovery metrics are introduced.
 
 ## 🏗 System Architecture
 
