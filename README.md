@@ -55,7 +55,6 @@ graph TD
     Groq -- Rate Limit / 503 --> Gemini[Gemini Fallback]
     Worker -->|5. Secondary LLM| Gemini
     Worker -->|6. Save Output & Mark Processed| DB
-    Worker -->|7. Dispatch| Twilio[Twilio WhatsApp]
     Vercel[Next.js Frontend] -->|Polls via /api/transactions| Express
 ```
 
