@@ -5,9 +5,12 @@ import { GoogleGenAI } from '@google/genai';
 
 function buildPrompt(customerName: string, amount: number, failureReason: string): string {
   return (
-    `Act as a helpful support agent. Write a polite, concise, single-sentence SMS ` +
-    `to a customer named ${customerName} about their failed payment of $${amount} ` +
-    `due to '${failureReason}'.`
+    `You are a helpful customer support agent for a fintech company. ` +
+    `A customer named ${customerName} had a payment of $${amount} fail due to '${failureReason}'.\n\n` +
+    `Your task is to write a polite, concise, single-sentence SMS recovery message for this customer.\n\n` +
+    `You MUST respond using EXACTLY this XML format and nothing else:\n` +
+    `<reasoning>Your step-by-step reasoning goes here.</reasoning>\n` +
+    `<sms>The exact SMS message to send goes here.</sms>`
   );
 }
 

@@ -2,10 +2,16 @@
 
 :root {
   --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
+  --color-razor-blue: #3366FF;
+  --color-razor-navy: #02042B;
+  --color-razor-bg: #F4F5F8;
 }
 
 @theme inline {
   --font-sans: var(--font-inter);
+  --color-primary: var(--color-razor-blue);
+  --color-navy: var(--color-razor-navy);
+  --color-bg-light: var(--color-razor-bg);
 }
 
 *, *::before, *::after {
@@ -20,8 +26,8 @@ html {
 
 body {
   margin: 0;
-  background-color: #f9fafb; /* gray-50 */
-  color: #111827;             /* gray-900 */
+  background-color: var(--color-bg-light); /* Material flat background */
+  color: #111827;
   font-family: var(--font-sans);
 }
 

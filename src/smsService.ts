@@ -28,6 +28,29 @@ export async function sendRecoverySMS(
   toPhone: string,
   body: string,
 ): Promise<string | null> {
+  const callMeBotKey = process.env.CALLMEBOT_API_KEY;
+
+  // Hackathon Bypass: If CallMeBot key is present, use it instead of Twilio!
+  if (callMeBotKey) {
+    try {
+      const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(toPhone)}&text=${encodeURIComponent(body)}&apikey=${callMeBotKey}`;
+      const res = await fetch(url);
+      const text = await res.text();
+      
+      if (text.includes('Message to') || res.ok) {
+         console.log(`✓ [CallMeBot] Delivered to ${toPhone}`);
+         return 'callmebot-success';
+      } else {
+         console.error(`✗ [CallMeBot] API Error:`, text);
+         return null;
+      }
+    } catch (err) {
+      console.error(`✗ [CallMeBot] Network failure:`, (err as Error).message);
+      return null;
+    }
+  }
+
+  // Original Twilio Logic
   const client   = getClient();
   const fromNum  = process.env.TWILIO_FROM_NUMBER;
 
@@ -39,7 +62,7 @@ export async function sendRecoverySMS(
   try {
     const message = await client.messages.create({
       body,
-      from: 'whatsapp:+14155238886',
+      from: `whatsapp:${fromNum}`,
       to:   `whatsapp:${toPhone}`,
     });
     console.log(`✓ [SMS] Delivered to ${toPhone} — SID: ${message.sid}`);
