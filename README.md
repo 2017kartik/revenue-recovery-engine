@@ -6,7 +6,7 @@ An enterprise-grade, event-driven backend system and real-time dashboard built t
 
 ## 🚀 Live Demo & 60-Second Quickstart
 
-**Live Application:** [revenue-recovery-engine-r3usoqmag-kartik-agrawals-projects.vercel.app](https://revenue-recovery-engine-r3usoqmag-kartik-agrawals-projects.vercel.app)
+**Live Application:** [revenue-recovery-engine-ha1lkit72-kartik-agrawals-projects.vercel.app](https://revenue-recovery-engine-ha1lkit72-kartik-agrawals-projects.vercel.app/)
 
 To verify the event-driven background queue and AI processing in real-time, follow these 4 steps on the live dashboard:
 
